@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Model weights (too large for git; downloaded at runtime or produced by train.py)
+*.pt
+weights/
+runs/
+
+# Datasets and source media (large, kept in Google Drive)
+pictures/
+results/
+*.pdf
+
+# macOS / Google Drive
+.DS_Store
+Icon?
