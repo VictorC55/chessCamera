@@ -1,0 +1,7 @@
+# Training / inference deps for prep_dataset.py, train.py, detect.py.
+# torch is deliberately not listed: Colab ships a CUDA build, and pip would
+# replace it with a mismatched one. Install torch yourself on a local machine.
+ultralytics==8.4.155
+PyYAML>=6.0
+opencv-python>=4.8
+huggingface_hub>=0.20
