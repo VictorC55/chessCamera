@@ -1,0 +1,16 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+kpt_shape: [4, 3]
+flip_idx: [0, 1, 2, 3]
+
+nc: 1
+names: ['chessboard']
+
+roboflow:
+  workspace: victor-cao-student
+  project: board-detection-503v7
+  version: 1
+  license: Private
+  url: https://app.roboflow.com/victor-cao-student/board-detection-503v7/1

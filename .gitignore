@@ -9,7 +9,8 @@ weights/
 runs/
 
 # Datasets and source media (large, kept in Google Drive)
-pictures/
+pictures/50test
+pictures/test1.png
 results/
 *.pdf
 
