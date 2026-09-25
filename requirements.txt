@@ -1,7 +1,12 @@
-# Training / inference deps for prep_dataset.py, train.py, detect.py.
-# torch is deliberately not listed: Colab ships a CUDA build, and pip would
-# replace it with a mismatched one. Install torch yourself on a local machine.
+# Everything needed to run the whole project: pip install -r requirements.txt
+# torch is not listed: ultralytics pulls it in when missing, and leaving it
+# unpinned keeps Colab's preinstalled CUDA build instead of replacing it.
+
+# yoloTesting/ (prep_dataset.py, train.py, detect.py)
 ultralytics==8.4.155
 PyYAML>=6.0
 opencv-python>=4.8
 huggingface_hub>=0.20
+
+# helpers/pdfToJPGs.py
+pymupdf>=1.24
