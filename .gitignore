@@ -10,6 +10,7 @@ runs/
 
 # Datasets and source media (large, kept in Google Drive)
 pictures/50test
+pictures/50testAnnotated
 pictures/test1.png
 results/
 *.pdf
