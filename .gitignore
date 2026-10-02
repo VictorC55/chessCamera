@@ -1,19 +1,33 @@
+cat > .gitignore << 'EOF'
 # Python
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 
-# Model weights (too large for git; downloaded at runtime or produced by train.py)
+# Model weights
 *.pt
+*.pth
 weights/
 runs/
+yoloTesting/runs/
 
-# Datasets and source media (large, kept in Google Drive)
-pictures/50test
-pictures/test1.png
+# Datasets and source media (large, kept in Google Drive / Roboflow)
+pictures/
 results/
 *.pdf
 
-# macOS / Google Drive
+# Generated debug images
+*_refined.jpg
+*_refined_refined.jpg
+*_debug.jpg
+*_fen_debug.jpg
+
+# Logs / scratch
+batch_results.txt
+*.log
+
+# macOS
 .DS_Store
 Icon?
+EOF
