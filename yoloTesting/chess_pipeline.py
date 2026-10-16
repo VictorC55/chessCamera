@@ -21,7 +21,16 @@ import chess.pgn
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from refine_any_color import refine_color
 
-CORNER_WEIGHTS = str(Path(__file__).resolve().parent / "runs/corners/weights/last_recal.pt")
+def _find_corner_weights():
+    """Newest runs/corners*/weights/last_recal.pt (train.py writes last_recal.pt; see recalibrate_bn)."""
+    runs = Path(__file__).resolve().parent / "runs"
+    found = sorted(runs.glob("corners*/weights/last_recal.pt"), key=lambda f: f.stat().st_mtime)
+    if not found:
+        raise FileNotFoundError(f"no corners*/weights/last_recal.pt under {runs}; run train.py first")
+    return str(found[-1])
+
+
+CORNER_WEIGHTS = _find_corner_weights()
 PIECE_MODEL_HF = "KanisornPutta/chess-model-yolov8m"
 PIECE_MODEL_FILE = "chess-model-yolov8m.pt"
 

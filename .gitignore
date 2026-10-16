@@ -24,6 +24,7 @@ pictures/
 results/
 *.pdf
 
+videos/
 # Generated debug images
 *_refined.jpg
 *_refined_refined.jpg
