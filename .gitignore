@@ -9,8 +9,12 @@ __pycache__/
 *.pt
 *.pth
 weights/
-runs/
-yoloTesting/runs/
+
+# Exception: corner detection weights
+!yoloTesting/runs/corners/weights/last_recal.pt
+
+# Ignore other runs
+runs/*
 
 <<<<<<< HEAD
 # Datasets and source media (large, kept in Google Drive)
