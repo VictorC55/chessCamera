@@ -72,6 +72,8 @@ if __name__ == "__main__":
         mosaic=0.3,       # board fills the frame, so heavy mosaic crops corners away
         degrees=10,       # small rotations only; large ones change which corner is leftmost
         scale=0.4,
+        hsv_h=0.5,   # ← ADD THIS LINE (full hue rotation)
+        hsv_s=0.7,   # ← maybe bump saturation too
         hsv_v=0.5,        # lighting variation, cheaper than shooting more photos
         project=str(Path(__file__).resolve().parent / "runs"),
         name="corners",

@@ -132,7 +132,7 @@ def refine(img, corners):
         quality = _grid_quality(canvas)
 
     _, contrast, ring_green = quality[(0, 0)]
-    ok = contrast > 0.3 and ring_green < 0.1
+    ok = contrast > 0.3 and (ring_green < 0.1 or score > 0.7)
     return fitted, {"ok": ok, "ecc": float(score), "shift": shift, "contrast": float(contrast),
                     "ring_green": float(ring_green)}
 
