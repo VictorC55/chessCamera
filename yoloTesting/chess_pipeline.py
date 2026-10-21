@@ -325,7 +325,7 @@ def find_move(fen_before, fen_after):
         t.push(move)
         if t.board_fen() == target:
             matches.append(move.uci())
-    return matches
+    return matche
 
 
 def pgn_from_moves(start_fen, moves_uci):
