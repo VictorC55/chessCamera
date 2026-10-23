@@ -13,3 +13,6 @@ pymupdf>=1.24
 
 # yoloTesting/chess_pipeline.py (FEN validation, move diff, PGN)
 chess>=1.10
+
+# receiver.py (photos from the Android app)
+flask>=3.0

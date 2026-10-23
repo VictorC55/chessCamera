@@ -4,9 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,8 +33,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var imageCapture: ImageCapture
     private val executor = Executors.newSingleThreadExecutor()
 
-    // Updated to your Mac's IP Address
-    private val macIpAddress = "172.20.10.2"
+    private lateinit var ipField: EditText
+
+    // The emulator reaches the Mac it runs on at 10.0.2.2; a real phone defaults to macIp from android/local.properties.
+    // Whatever is typed in the IP field is saved on the phone and overrides the default.
+    private val isEmulator = Build.HARDWARE in setOf("ranchu", "goldfish") || Build.FINGERPRINT.contains("generic")
+    private val defaultMacIp = if (isEmulator) "10.0.2.2" else BuildConfig.MAC_IP
+    private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
     private val requestPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -46,6 +54,25 @@ class MainActivity : AppCompatActivity() {
         val layout = FrameLayout(this)
         previewView = PreviewView(this)
         layout.addView(previewView)
+
+        ipField = EditText(this).apply {
+            hint = "Mac IP, e.g. 192.168.1.20"
+            setText(prefs.getString("macIp", defaultMacIp))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            isSingleLine = true
+            setBackgroundColor(0xCCFFFFFF.toInt())
+            setPadding(32, 24, 32, 24)
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.TOP
+                topMargin = 150
+                leftMargin = 48
+                rightMargin = 48
+            }
+        }
+        layout.addView(ipField)
 
         val captureButton = Button(this).apply {
             text = "Send to Mac"
@@ -90,6 +117,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun captureAndSend() {
         if (!::imageCapture.isInitialized) return
+        val macIpAddress = ipField.text.toString().trim()
+        if (macIpAddress.isEmpty()) {
+            Toast.makeText(this, "Enter the Mac's IP address at the top", Toast.LENGTH_LONG).show()
+            return
+        }
+        prefs.edit().putString("macIp", macIpAddress).apply()
 
         val photoFile = File(externalCacheDir, "temp_photo.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -100,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     Toast.makeText(this@MainActivity, "Sending...", Toast.LENGTH_SHORT).show()
-                    sendToMac(photoFile)
+                    sendToMac(photoFile, macIpAddress)
                 }
                 override fun onError(exception: ImageCaptureException) {
                     Toast.makeText(this@MainActivity, "Capture failed", Toast.LENGTH_SHORT).show()
@@ -109,7 +142,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun sendToMac(file: File) {
+    private fun sendToMac(file: File, macIpAddress: String) {
         executor.execute {
             try {
                 val bitmap = BitmapFactory.decodeFile(file.absolutePath)
@@ -120,6 +153,9 @@ class MainActivity : AppCompatActivity() {
                 val url = URL("http://$macIpAddress:5001/upload")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
+                // Fail fast if the IP is wrong or the Mac isn't reachable, instead of hanging for minutes
+                conn.connectTimeout = 5000
+                conn.readTimeout = 15000
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW")
 

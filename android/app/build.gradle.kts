@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// Per-developer settings from android/local.properties (gitignored), e.g. macIp=192.168.1.20
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -13,9 +21,29 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        // Default IP of the Mac running receiver.py on a real phone; can be changed in the app (the emulator defaults to 10.0.2.2)
+        buildConfigField("String", "MAC_IP", "\"${localProps.getProperty("macIp", "")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // Shared debug key checked into the repo, so builds from any Mac can install over each other on the same phone
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
         }
@@ -36,7 +64,7 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // CameraX
-    val cameraxVersion = "1.3.4"
+    val cameraxVersion = "1.4.2"  // 1.4+ ships 16 KB-aligned native libs (needed on 16 KB-page devices)
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
