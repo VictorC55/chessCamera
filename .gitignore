@@ -9,8 +9,8 @@ __pycache__/
 *.pth
 weights/
 
-# Exception: corner detection weights
-!yoloTesting/runs/corners/weights/last_recal.pt
+# Exception: the corner model the pipeline loads (see chess_pipeline.py)
+!yoloTesting/models/corners.pt
 
 # Ignore other runs
 runs/*

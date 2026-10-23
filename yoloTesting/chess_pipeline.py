@@ -22,12 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from refine_any_color import refine_color
 
 def _find_corner_weights():
-    """Newest runs/corners*/weights/last_recal.pt (train.py writes last_recal.pt; see recalibrate_bn)."""
-    runs = Path(__file__).resolve().parent / "runs"
-    found = sorted(runs.glob("corners*/weights/last_recal.pt"), key=lambda f: f.stat().st_mtime)
-    if not found:
-        raise FileNotFoundError(f"no corners*/weights/last_recal.pt under {runs}; run train.py first")
-    return str(found[-1])
+    """The one committed corner model, so every machine loads the same weights.
+    To promote a new training run, copy its weights/last_recal.pt here (see train.py)."""
+    path = Path(__file__).resolve().parent / "models" / "corners.pt"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} missing; git pull, or copy a run's weights/last_recal.pt there")
+    return str(path)
 
 
 CORNER_WEIGHTS = _find_corner_weights()

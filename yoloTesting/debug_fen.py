@@ -20,7 +20,7 @@ from ultralytics import YOLO
 sys.path.insert(0, str(Path(__file__).resolve().parent / "yoloTesting"))
 from refine_corners import refine
 
-from chess_pipeline import CORNER_WEIGHTS  # newest runs/corners*/weights/last_recal.pt
+from chess_pipeline import CORNER_WEIGHTS  # yoloTesting/models/corners.pt
 PIECE_MODEL_HF = "KanisornPutta/chess-model-yolov8m"
 PIECE_MODEL_FILE = "chess-model-yolov8m.pt"
 

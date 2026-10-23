@@ -89,5 +89,6 @@ if __name__ == "__main__":
 
     print(f"\nresults:      {save_dir}")
     print(f"use weights:  {recal}")
+    print(f"to make it the pipeline's model (if corner error beats the current one): cp {recal} models/corners.pt")
     print(f"recalibrated: box mAP50 {metrics.box.map50:.3f}, pose mAP50 {metrics.pose.map50:.3f}, "
           f"pose mAP50-95 {metrics.pose.map:.3f}  (plots in {metrics.save_dir})")
