@@ -34,3 +34,7 @@ batch_results.txt
 # macOS
 .DS_Store
 Icon?
+
+# Personal notes
+documentation/
+incoming/

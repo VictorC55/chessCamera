@@ -236,7 +236,7 @@ def detect_fen(img_path, piece_model=None, corner_model=None, verbose=False):
     Full pipeline. Returns dict:
         { 'fen': str|None, 'H': np.ndarray|None,
           'fine': np.ndarray|None, 'source': str|None }
-    Tries YOLO and piece-hull, keeps whichever refined with higher ECC.
+    Tries YOLO, piece-hull and dark-square colour, keeps whichever refined with higher ECC.
     """
     empty = {"fen": None, "H": None, "fine": None, "source": None}
 
@@ -270,6 +270,15 @@ def detect_fen(img_path, piece_model=None, corner_model=None, verbose=False):
         fine_h, info_h = _try_corners(img, rough_hull, "hull", verbose)
         if fine_h is not None and info_h is not None:
             candidates.append(("hull", fine_h, info_h))
+
+    # Dark-square colour (boards the corner model has never seen)
+    from board_color import search_color
+    found = search_color(img)
+    if found is not None:
+        fine_c, info_c, cand = found
+        if verbose:
+            print(f"  color: ok={info_c.get('ok')}, ecc={info_c['ecc']:.2f}, hue={cand['hue']}±{cand['half']}")
+        candidates.append(("color", fine_c, info_c))
 
     if not candidates:
         if verbose:
@@ -325,7 +334,7 @@ def find_move(fen_before, fen_after):
         t.push(move)
         if t.board_fen() == target:
             matches.append(move.uci())
-    return matche
+    return matches
 
 
 def pgn_from_moves(start_fen, moves_uci):

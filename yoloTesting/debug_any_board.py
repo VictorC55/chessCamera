@@ -23,6 +23,7 @@ from chess_pipeline import (
     pick_orientation, dedupe_and_map, fen_from_squares, S,
 )
 from refine_any_color import refine_color
+from board_color import search_color
 import chess
 
 
@@ -44,7 +45,7 @@ def main():
     pieces = detect_pieces(img_path, pm)
     print(f"  {len(pieces)} piece detections")
 
-    # --- corners (YOLO first, hull fallback) ---
+    # --- corners (YOLO first, hull fallback), refined on the brightness mask ---
     print("Detecting corners...")
     rough = detect_corners_yolo(img_path, cm)
     source = "yolo"
@@ -52,18 +53,28 @@ def main():
         print("  yolo corner model failed -> piece-hull fallback")
         rough = detect_corners_piece_hull(img, pieces)
         source = "hull"
-    if rough is None:
-        raise SystemExit("  no corners found")
-    print(f"  rough ({source}): {np.asarray(rough).astype(int).tolist()}")
+    fine, info = None, None
+    if rough is not None:
+        print(f"  rough ({source}): {np.asarray(rough).astype(int).tolist()}")
+        print("Refining corners...")
+        result = refine_color(img, rough)
+        fine = result[0] if isinstance(result, tuple) else result
+        info = result[1] if isinstance(result, tuple) else None
+        if info:
+            print(f"  {source}: ok={info.get('ok')}, ecc={info.get('ecc'):.2f}, "
+                  f"shift={info.get('shift')}, contrast={info.get('contrast'):.2f}")
 
-    # --- refine ---
-    print("Refining corners...")
-    result = refine_color(img, rough)
-    fine = result[0] if isinstance(result, tuple) else result
-    info = result[1] if isinstance(result, tuple) else None
-    if info:
-        print(f"  ok={info.get('ok')}, ecc={info.get('ecc'):.2f}, "
-              f"shift={info.get('shift')}, contrast={info.get('contrast'):.2f}")
+    # --- dark-square colour search; keep it if it fits the checkerboard better ---
+    found = search_color(img)
+    if found is not None:
+        fine_c, info_c, cand = found
+        print(f"  color (hue {cand['hue']}±{cand['half']}): ok={info_c.get('ok')}, ecc={info_c['ecc']:.2f}, "
+              f"shift={info_c.get('shift')}, contrast={info_c.get('contrast'):.2f}")
+        if info is None or info_c["ecc"] > info.get("ecc", 0.0):
+            fine, info, source = fine_c, info_c, "color"
+    if fine is None:
+        raise SystemExit("  no corners found")
+    print(f"  using: {source}")
 
     # --- orientation + FEN ---
     name, H, score = pick_orientation(fine, pieces)

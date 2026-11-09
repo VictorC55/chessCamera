@@ -20,9 +20,21 @@ each one, with two changes that matter for video:
     squares hold which colour, and the piece type on each square is the
     majority vote over the frames of that stable run.
 
-Each change between stable positions is then explained as the shortest
-legal move sequence (up to 3 plies, in case samples were missed) whose
-result best matches what was seen. Matching is on occupancy and colour;
+The game is assumed to start from the standard position (--start-fen) and is
+decoded as a whole: a beam search over legal games from the start, scoring each
+candidate game against every observed position and keeping the cheapest (see
+decode_game). Each stable position counts in full; a trusted frame too
+short-lived to be stable counts at low weight, enough to settle move order.
+A detector error that persists (a piece hidden behind another) costs every
+candidate game the same and cancels out, which change-by-change matching
+could not do. Moves that move or capture a piece the camera saw no sign of
+are penalised, because otherwise the search "explains" a never-seen piece by
+inventing moves that get it captured.
+
+With --start-fen auto the older greedy matcher is used instead: each change
+between stable positions is explained as the shortest legal move sequence
+(up to 3 plies, in case samples were missed) whose result best matches what
+was seen. Matching is on occupancy and colour;
 the piece detector's type labels are only a weak tiebreak, because once
 the start position is known the rules determine the types and the camera
 only has to tell occupied from empty. (The detector mislabels tall pieces
@@ -31,7 +43,7 @@ constantly; occupancy it gets right.)
 Per-frame results are cached to <video>_fens.json; --replay re-runs only
 the move logic from that cache, which is instant.
 
-Start position: 'auto' takes the first stable detection. If that is within a
+Start position 'auto' (greedy matcher only) takes the first stable detection. If that is within a
 few squares of the standard start, the standard start's piece types are used
 (the detector's labels are unreliable) and, if the first change cannot be
 explained from the merged board, the full standard start is tried instead.
@@ -46,7 +58,7 @@ Google Drive stream from the cloud and OpenCV times out mid-video.
 Usage:
     python yoloTesting/video_to_moves.py videos/clip.mp4
     python yoloTesting/video_to_moves.py videos/clip.mp4 --interval 0.5 --save-frames
-    python yoloTesting/video_to_moves.py videos/clip.mp4 --start-fen startpos
+    python yoloTesting/video_to_moves.py videos/clip.mp4 --start-fen auto
 
 Options:
     --interval S      seconds between sampled frames (default 1.0; 0.5 tracks
@@ -59,9 +71,10 @@ Options:
     --tolerance T     occupancy error allowed for a move to be accepted
                       (default 1.5; a missed piece costs 0.5, an invented
                       piece 1.0, squares outside the frame cost nothing)
-    --start-fen F     'auto' (default: first stable detection, snapped to the
-                      standard start if its occupancy matches), 'startpos',
-                      or a FEN.
+    --start-fen F     'startpos' (default: the game starts from the standard
+                      position), a FEN, or 'auto' (take the start from the
+                      video and use the older greedy matcher; for clips that
+                      begin mid-game).
     --replay          skip detection; load <video>_fens.json from a previous run
     --save-frames     write annotated frames to <video>_frames/ so you can
                       see what the pipeline saw at each sample.
@@ -80,6 +93,7 @@ import chess
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import refine_corners  # noqa: E402
 from refine_any_color import refine_color  # noqa: E402
+from board_color import search_color, refine_hue  # noqa: E402
 from chess_pipeline import (  # noqa: E402
     load_models, detect_corners_piece_hull, corners_contain_pieces,
     pick_orientation, dedupe_and_map, fen_from_squares, make_homography, S, DST,
@@ -90,6 +104,11 @@ GOOD_ECC = 0.65     # a fit this strong updates the tracker
 MIN_ECC = 0.62      # below this the frame's FEN is not trusted
 MIN_INSIDE = 0.8    # fraction of piece base points that must fall inside the quad
 TRACK_FAILS_BEFORE_RESEED = 2
+
+# Dark-square hue band (centre, half-width) of the board, set when the colour search
+# (board_color.py) wins a fit. From then on every refinement uses that hue mask instead
+# of the brightness mask.
+board_hue = None
 
 
 # =====================================================================
@@ -118,6 +137,9 @@ def detect_corners_frame(frame, corner_model, conf=0.3):
 
 def refine_quad(frame, rough, retries):
     """Checkerboard-fit `rough`. retries=False (tracking) skips the slow rotated restarts."""
+    if board_hue is not None:
+        fine, info = refine_hue(frame, rough, *board_hue, retries=retries)
+        return fine, info["ecc"]
     old = refine_corners.WEAK_ECC
     refine_corners.WEAK_ECC = old if retries else 0.0
     try:
@@ -164,7 +186,9 @@ def anchor_to_pieces(frame, quad, ecc, pieces):
 
 
 def search_quad(frame, pieces, corner_model):
-    """Full search from scratch: YOLO corners (if they contain the pieces) and piece hull."""
+    """Full search from scratch: YOLO corners (if they contain the pieces), piece hull, and the
+    board's dark-square colour. A colour win locks in its hue for later tracking."""
+    global board_hue
     cands = []
     rough = detect_corners_frame(frame, corner_model)
     if rough is not None and corners_contain_pieces(rough, pieces):
@@ -174,10 +198,16 @@ def search_quad(frame, pieces, corner_model):
     if rough is not None:
         fine, ecc = refine_quad(frame, rough, retries=True)
         cands.append((ecc, fine, "hull"))
+    found = search_color(frame)
+    if found is not None:
+        fine, info, cand = found
+        cands.append((info["ecc"], fine, "color", (cand["hue"], cand["half"])))
     if not cands:
         return None, 0.0, None
-    ecc, fine, src = max(cands, key=lambda c: c[0])
-    return fine, ecc, src
+    best = max(cands, key=lambda c: c[0])
+    if best[2] == "color":
+        board_hue = best[3]
+    return best[1], best[0], best[2]
 
 
 def fen_for_quad(fine, pieces):
@@ -260,7 +290,7 @@ def vote_board_fen(board_fens):
 
 
 def stable_positions(samples, min_run, max_jitter=1):
-    """[(t_first_seen, board_fen, visible_squares|None)] for runs of >= min_run trusted frames whose occupancy
+    """[(t_first_seen, board_fen, visible_squares|None, n_frames)] for runs of >= min_run trusted frames whose occupancy
     (which squares hold which colour) differs by <= max_jitter squares frame to frame."""
     out = []
     run = []  # (t, board_fen, occupancy)
@@ -272,7 +302,7 @@ def stable_positions(samples, min_run, max_jitter=1):
             if all(r[3] is not None for r in run):
                 vis = set.intersection(*[set(chess.parse_square(q) for q in r[3]) for r in run])
             if not out or out[-1][1] != bf:
-                out.append((run[0][0], bf, vis))
+                out.append((run[0][0], bf, vis, len(run)))
 
     for s in samples:
         bf = s["board_fen"] if s["trusted"] else None
@@ -415,6 +445,160 @@ def fmt_moves(board, moves):
     return " ".join(parts)
 
 
+
+
+# =====================================================================
+# Whole-game decoding (start position known)
+# =====================================================================
+# When the start is known, the game is decoded as a whole instead of change by change: a beam
+# search over legal games from the start, where each game is scored against every stable
+# observation and the cheapest game wins. The greedy matcher above judges each change on its
+# own, so a detector error that persists (a pawn hidden behind a king, a piece that is never
+# seen) makes every later change look unexplainable. Here such an error costs every hypothesis
+# the same, so it cancels out, and a spurious move made to fit one noisy observation is paid for
+# in all the observations after it.
+BEAM = 300          # games kept after each observation
+LAYER = 60          # boards expanded at each extra ply within one gap
+PLY_COST = 1.0      # cost of each move, so "nothing happened" wins unless the move clearly helps
+MAX_RUN_WEIGHT = 2  # an observation counts once per frame of its stable run, up to this
+WEAK_WEIGHT = 0.25  # weight of a trusted frame too short-lived to be stable (a hand may be in it):
+                    # too weak to force a move, but it breaks ties such as which move order
+                    # reached the first stable position
+DECODE_MISS = 0.25  # a piece the detector did not see. Lower than MISS_WEIGHT: summed over a whole
+                    # game, a never-seen piece (a pawn behind the king) otherwise pays the decoder to
+                    # invent moves that get it captured.
+UNSEEN_COST = 2.0   # extra cost of a move that moves, or captures, a piece the previous observation
+                    # saw no piece on. Such a move is usually invented to make a piece the camera
+                    # cannot see (a pawn behind the king) disappear, which stops it costing misses.
+
+
+class Obs:
+    """Bitboards of one observed position, for fast scoring."""
+    def __init__(self, board_fen, visible):
+        b = chess.Board(None)
+        b.set_board_fen(board_fen)
+        self.white = b.occupied_co[chess.WHITE]
+        self.black = b.occupied_co[chess.BLACK]
+        self.pieces = [(b.pieces_mask(pt, c), pt, c) for c in chess.COLORS for pt in chess.PIECE_TYPES]
+        self.vis = chess.BB_ALL if visible is None else sum(chess.BB_SQUARES[q] for q in visible)
+
+    def score(self, board):
+        """Like board_distance: missed piece DECODE_MISS, wrong/invented piece 1.0, wrong type 0.1."""
+        tw, tb = board.occupied_co[chess.WHITE], board.occupied_co[chess.BLACK]
+        empty = ~(self.white | self.black)
+        miss = chess.popcount((tw | tb) & empty & self.vis)
+        wrong = chess.popcount(((self.white & ~tw) | (self.black & ~tb)) & self.vis)
+        same = ((tw & self.white) | (tb & self.black)) & self.vis
+        matched = 0
+        for mask, pt, c in self.pieces:
+            matched |= mask & board.pieces_mask(pt, c)
+        typ = chess.popcount(same & ~matched)
+        return DECODE_MISS * miss + wrong + TYPE_WEIGHT * typ
+
+    def diff(self, board):
+        tw, tb = board.occupied_co[chess.WHITE], board.occupied_co[chess.BLACK]
+        return ((tw ^ self.white) | (tb ^ self.black)) & self.vis
+
+    def seen_empty(self, square):
+        bb = chess.BB_SQUARES[square]
+        return bool(bb & self.vis) and not bb & (self.white | self.black)
+
+
+def _key(board):
+    return (board.board_fen(), board.turn, board.castling_rights, board.ep_square)
+
+
+def decode_game(start, observations, max_plies=4):
+    """Cheapest legal game from `start` given [(t, board_fen, visible|None, weight)].
+    Returns ([(t, board_fen, moves_since_previous_observation, residual)], total cost)."""
+    # beam entries: (cost, board, path); path is a linked list (parent, obs_index, moves)
+    beam = [(0.0, start.copy(stack=False), None)]
+    prev = None
+    for i, (t, bf, vis, weight) in enumerate(observations):
+        obs = Obs(bf, vis)
+        best = {}  # position key -> (cost, board, path)
+
+        def offer(cost, board, path, moves):
+            sc = obs.score(board)
+            total = cost + weight * sc + PLY_COST * len(moves)
+            k = _key(board)
+            if k not in best or total < best[k][0]:
+                best[k] = (total, board, (path, i, moves))
+            return sc
+
+        layer = []
+        for cost, board, path in beam:
+            offer(cost, board, path, ())
+            layer.append((obs.score(board), cost, board, path, ()))
+        for _ in range(max_plies):
+            layer.sort(key=lambda e: e[0] * weight + e[1])
+            nxt, seen = [], set()
+            for _sc, cost, board, path, moves in layer[:LAYER]:
+                diff = obs.diff(board)
+                if not diff:
+                    continue
+                for m in board.legal_moves:
+                    if not ((chess.BB_SQUARES[m.from_square] | chess.BB_SQUARES[m.to_square]) & diff):
+                        continue
+                    c = cost
+                    if prev is not None:
+                        if prev.seen_empty(m.from_square):
+                            c += UNSEEN_COST
+                        if board.piece_at(m.to_square) and prev.seen_empty(m.to_square):
+                            c += UNSEEN_COST
+                    b = board.copy(stack=False)
+                    b.push(m)
+                    k = _key(b)
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    seq = moves + (m,)
+                    sc = offer(c, b, path, seq)
+                    nxt.append((sc, c, b, path, seq))
+            layer = nxt
+        beam = sorted(best.values(), key=lambda e: e[0])[:BEAM]
+        prev = obs
+
+    cost, _board, path = beam[0]
+    segments = []
+    while path is not None:
+        path, i, moves = path
+        segments.append((i, moves))
+    segments.reverse()
+    out, board = [], start.copy()
+    for (i, moves), (t, bf, vis, _w) in zip(segments, observations):
+        for m in moves:
+            board.push(m)
+        out.append((t, bf, list(moves), Obs(bf, vis).score(board)))
+    return out, cost
+
+
+def decoder_observations(samples, min_run, max_jitter):
+    """Every run of trusted frames, weighted: stable runs (>= min_run frames) by length, shorter
+    ones at WEAK_WEIGHT."""
+    return [(t, bf, vis, min(n, MAX_RUN_WEIGHT) if n >= min_run else WEAK_WEIGHT)
+            for t, bf, vis, n in stable_positions(samples, 1, max_jitter)]
+
+
+def analyse_known_start(start, observations):
+    timeline, cost = decode_game(start, observations)
+    print(f"\nTimeline (whole-game decode from {start.board_fen()}, total cost {cost:.1f}):")
+    print(f"  t=  0.0s  {start.board_fen()}  (start)")
+    board = start.copy()
+    san_all, moves_all = [], []
+    for t, bf, moves, residual in timeline:
+        if not moves:
+            continue
+        san = fmt_moves(board, moves)
+        print(f"  t={t:6.1f}s  {bf}")
+        print(f"            -> {san}   (squares still disagreeing: {residual:.1f})")
+        san_all.append(san)
+        for m in moves:
+            board.push(m)
+            moves_all.append(m)
+    return board, san_all, moves_all
+
+
 # =====================================================================
 # Main
 # =====================================================================
@@ -427,7 +611,7 @@ def main():
                     help="squares of occupancy change allowed within one stable run (default 1)")
     ap.add_argument("--tolerance", type=float, default=1.5)
     ap.add_argument("--replay", action="store_true")
-    ap.add_argument("--start-fen", default="auto")
+    ap.add_argument("--start-fen", default="startpos")
     ap.add_argument("--save-frames", action="store_true")
     args = ap.parse_args()
 
@@ -559,10 +743,17 @@ def analyse(samples, args):
         raise SystemExit("nothing stable detected; try a smaller --interval or --stable 1")
 
     # ---- pass 3: moves ----
+    if args.start_fen != "auto":
+        start = chess.Board() if args.start_fen == "startpos" else chess.Board(args.start_fen)
+        obs = decoder_observations(samples, args.stable, args.jitter)
+        print(f"decoding from the start position using {len(obs)} observations "
+              f"({sum(1 for o in obs if o[3] == WEAK_WEIGHT)} of them short-lived, at low weight)")
+        board, san_all, moves_all = analyse_known_start(start, obs)
+        print_moves(board, san_all, moves_all)
+        return
+
     near_start = False
-    if args.start_fen == "startpos":
-        board, turn_unknown = chess.Board(), False
-    elif args.start_fen == "auto":
+    if args.start_fen == "auto":
         board = chess.Board(None)
         board.set_board_fen(stable[0][1])
         board = with_castling(board)
@@ -582,15 +773,13 @@ def analyse(samples, args):
                   f"with the observed occupancy: {board.board_fen()}")
         else:
             print(f"start position taken from video: {board.board_fen()}")
-    else:
-        board, turn_unknown = chess.Board(args.start_fen), False
 
     moves_all, san_all = [], []
     unexplained = 0
     first_change = True
     print("\nTimeline:")
     print(f"  t=  0.0s  {board.board_fen()}  (start)")
-    for t, bf, vis in stable:
+    for t, bf, vis, _n in stable:
         observed = chess.Board(None)
         observed.set_board_fen(bf)
         occ0, typ0 = board_distance(board, observed, vis)
@@ -641,6 +830,10 @@ def analyse(samples, args):
             moves_all.append(m)
         turn_unknown = False
 
+    print_moves(board, san_all, moves_all)
+
+
+def print_moves(board, san_all, moves_all):
     print("\nMoves:")
     if not moves_all:
         print("  (none)")

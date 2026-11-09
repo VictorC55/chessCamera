@@ -133,7 +133,7 @@ def main():
         if recent and abs(recent[0] - t) < 0.75:
             col = {"move": (80, 220, 80), "noise": (200, 200, 80), "skip": (60, 60, 230)}[recent[1]]
             cv2.putText(panel, f"@ {recent[0]:.1f}s: {recent[2]}", (16, y), FONT, 0.6, col, 2)
-            keyframes.append((i, f"t={t:.1f}s {recent[2]}"))
+            keyframes.append((i, f"t={t:.1f}s {recent[2]}", recent))
         y += 34
         cv2.putText(panel, "moves recognised so far:", (16, y), FONT, 0.55, (200, 200, 200), 1); y += 26
         san = " ".join(e[2] for e in done if e[1] == "move")
@@ -143,8 +143,13 @@ def main():
     vw.release()
     print(f"wrote {out_path}")
 
-    # contact sheet: the frames where a move was recognised (up to 12)
-    picks = [k for k in keyframes if "treated" not in k[1] and "unexplained" not in k[1]][:12]
+    # contact sheet: the first frame of each recognised move (up to 24)
+    picks, seen = [], set()
+    for i, cap, ev in keyframes:
+        if ev[1] == "move" and ev not in seen:
+            seen.add(ev)
+            picks.append((i, cap))
+    picks = picks[:24]
     if picks:
         tiles = []
         for i, cap in picks:
