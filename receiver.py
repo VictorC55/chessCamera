@@ -9,13 +9,16 @@ import json
 import cv2
 import numpy as np
 
+from chess_pipeline import (load_models, detect_pieces, detect_corners_yolo, detect_corners_piece_hull,
+                            corners_contain_pieces, pick_orientation, CANDIDATES)
+from refine_any_color import refine_color
+
 app = Flask(__name__)
 # incoming/ next to this script, wherever the repo is cloned
 SAVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "incoming")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Load models at startup
-from chess_pipeline import load_models
 print("Loading models...")
 piece_model, corner_model = load_models()
 print("Models loaded!")
