@@ -14,4 +14,15 @@ object Prefs {
     fun macIp(ctx: Context): String = prefs(ctx).getString("macIp", defaultMacIp) ?: defaultMacIp
 
     fun setMacIp(ctx: Context, ip: String) = prefs(ctx).edit().putString("macIp", ip).apply()
+
+    fun useLocal(ctx: Context): Boolean = prefs(ctx).getBoolean("useLocal", false)
+    fun setUseLocal(ctx: Context, v: Boolean) = prefs(ctx).edit().putBoolean("useLocal", v).apply()
+
+    fun corners(ctx: Context): BoardCorners? =
+        prefs(ctx).getString("corners", null)?.let { BoardCorners.fromJson(it) }
+    fun setCorners(ctx: Context, c: BoardCorners?) {
+        val e = prefs(ctx).edit()
+        if (c == null) e.remove("corners") else e.putString("corners", c.toJson())
+        e.apply()
+    }
 }

@@ -21,6 +21,16 @@
         android:text="Point at the board"
         android:textColor="@color/white" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_setup"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="24dp"
+        android:layout_marginBottom="48dp"
+        android:text="Set up board" />
+
     <View
         android:id="@+id/shutter"
         android:layout_width="76dp"

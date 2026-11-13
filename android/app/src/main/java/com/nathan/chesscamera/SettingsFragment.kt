@@ -20,6 +20,10 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         val result = view.findViewById<TextView>(R.id.test_result)
         ipField.setText(Prefs.macIp(requireContext()))
 
+        val sw = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_local)
+        sw.isChecked = Prefs.useLocal(requireContext())
+        sw.setOnCheckedChangeListener { _, on -> Prefs.setUseLocal(requireContext(), on) }
+
         view.findViewById<View>(R.id.btn_test).setOnClickListener {
             val ip = ipField.text.toString().trim()
             if (ip.isEmpty()) { result.text = "Enter an IP first"; return@setOnClickListener }
